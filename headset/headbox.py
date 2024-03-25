@@ -3,31 +3,6 @@ import cadquery as cq
 from .params import HeadsetParams
 
 
-def create_strap_guide(
-    height: float,
-    width: float,
-    depth: float,
-    strap_clearance: float,
-):
-    padding = depth - strap_clearance
-    assert padding >= 0.1
-    outer_rect = (
-        cq.Workplane("YZ")
-        .rect(
-            strap_clearance + padding * 2, height + padding * 2, centered=(True, True)
-        )
-        .extrude(width)
-    )
-    inner_rect = (
-        cq.Workplane("YZ")
-        .rect(strap_clearance + padding * 2, height, centered=(True, True))
-        .extrude(width)
-        .translate((0, padding, 0))
-    )
-    y_offset = outer_rect.faces(">Y").val().Center().y
-    return outer_rect.cut(inner_rect).translate((0, -y_offset, 0))
-
-
 def create_headbox_arc(
     width: float,
     height: float,
@@ -61,42 +36,16 @@ def create_cutout_cylinder(
     )
 
 
-def create_screw_mount(
-    hole_diameter: float,
-    hole_padding: float,
-    depth: float,
-):
-    inner_radius = hole_diameter / 2
-    outer_radius = inner_radius + hole_padding
-    outer_cylinder = cq.Workplane("XZ").circle(outer_radius).extrude(depth)
-    inner_cylinder = cq.Workplane("XZ").circle(inner_radius).extrude(depth)
-    return outer_cylinder.cut(inner_cylinder)
-
-
 def create_battery_holder(
     battery_width: float,
     battery_height: float,
     battery_depth: float,
-    corner_extent: float = 10,
-    corner_thickness: float = 2,
+    container_width: float,
+    container_height: float,
 ):
-    width = battery_width + 2 * corner_thickness
-    height = battery_height + 2 * corner_thickness
-    box = cq.Workplane("XZ").box(
-        width,
-        height,
-        battery_depth,
-        centered=(True, True, False),
-    )
-    v_cut_box = cq.Workplane("XZ").box(
-        width - 2 * corner_extent,
-        height,
-        battery_depth,
-        centered=(True, True, False),
-    )
-    h_cut_box = cq.Workplane("XZ").box(
-        width,
-        height - 2 * corner_extent,
+    outer_box = cq.Workplane("XZ").box(
+        container_width,
+        container_height,
         battery_depth,
         centered=(True, True, False),
     )
@@ -106,20 +55,72 @@ def create_battery_holder(
         battery_depth,
         centered=(True, True, False),
     )
-    box = box.cut(inner_box).cut(v_cut_box).cut(h_cut_box)
-    return box
+    return outer_box.cut(inner_box)
+
+
+def create_control_board_holder(
+    control_board_width: float,
+    control_board_height: float,
+    control_board_depth: float,
+    container_width: float,
+    container_height: float,
+    wall_thickness: float,
+    ethernet_cutout_width: float = 20,
+):
+    outer_box = cq.Workplane("XZ").box(
+        container_width,
+        container_height,
+        control_board_depth + wall_thickness,
+        centered=(True, True, False),
+    )
+
+    inner_box = (
+        cq.Workplane("XZ")
+        .box(
+            control_board_width,
+            control_board_height + 2 * wall_thickness,
+            control_board_depth,
+            centered=(True, True, False),
+        )
+        .translate((0, 0, wall_thickness))
+    )
+    ethernet_x = (control_board_width - ethernet_cutout_width) / 2
+    ethernet_z = -(control_board_height - ethernet_cutout_width) / 2 - wall_thickness
+    ethernet_cutout = (
+        cq.Workplane("XZ")
+        .box(
+            ethernet_cutout_width,
+            ethernet_cutout_width,
+            control_board_depth,
+            centered=(True, True, False),
+        )
+        .translate((ethernet_x, 0, ethernet_z))
+    )
+    return outer_box.cut(inner_box).cut(ethernet_cutout)
+
+
+def bind_to_top_surface(box: cq.Workplane, target: cq.Workplane, cut: bool = False):
+    box_y_extent = box.faces("<Y").val().Center().y
+    target_y_extent = target.faces("<Y" if cut else ">Y").val().Center().y
+    target = target.translate((0, box_y_extent - target_y_extent, 0))
+    if cut:
+        return box.cut(target)
+    else:
+        return box.union(target)
 
 
 def create_headbox(hs: HeadsetParams):
+    headbox_height = 2 * hs.headbox.wall_thickness + hs.control_board.height
+    headbox_width = 2 * hs.headbox.wall_thickness + hs.control_board.width
     arc = create_headbox_arc(
-        width=hs.headbox.width,
-        height=hs.headbox.height,
+        width=headbox_width,
+        height=headbox_height,
         head_radius=hs.back_head.radius,
         head_radius_penetration=hs.headbox.head_penetration,
     )
     box = cq.Workplane("XZ").box(
-        hs.headbox.width,
-        hs.headbox.height,
+        headbox_width,
+        headbox_height,
         hs.headbox.depth,
         centered=(True, True, False),
     )
@@ -129,64 +130,35 @@ def create_headbox(hs: HeadsetParams):
         penetration=hs.headbox.deep_cutout_penetration,
     )
     box = box.union(arc).cut(cutout_cylinder)
-    through_hole = (
-        cq.Workplane("XZ")
-        .box(
-            hs.headbox.strap_cutout_width,
+    box = bind_to_top_surface(
+        box=box,
+        target=cq.Workplane("XZ").box(
+            headbox_width,
             hs.headbox.strap_cutout_height,
-            hs.headbox.depth * 2,
-            centered=(True, True, False),
-        )
-        .edges("|Y")
-        .fillet(1)
+            hs.headbox.strap_cutout_depth,
+            centered=(True, True, True),
+        ),
+        cut=True,
     )
-    battery_holder = create_battery_holder(
-        battery_width=hs.battery.width,
-        battery_height=hs.battery.height,
-        battery_depth=hs.battery.depth,
-    ).translate((0, -hs.headbox.depth, -hs.headbox.height / 4))
-    box = box.union(battery_holder)
-    for strap_position in (
-        -hs.headbox.width / 2,
-        hs.headbox.width / 2 - hs.headbox.strap_guide_width,
-    ):
-        strap_guide = create_strap_guide(
-            height=hs.headbox.strap_cutout_height,
-            width=hs.headbox.strap_guide_width,
-            depth=hs.headbox.strap_guide_depth,
-            strap_clearance=hs.headbox.strap_clearance,
-        ).translate((strap_position, -hs.headbox.depth, 0))
-        box = box.union(strap_guide)
-    spacing_x, spacing_z = (
-        hs.control_board.screw_spacing_x,
-        hs.control_board.screw_spacing_z,
+    box = bind_to_top_surface(
+        box=box,
+        target=create_battery_holder(
+            battery_width=hs.battery.width,
+            battery_height=hs.battery.height,
+            battery_depth=hs.battery.depth,
+            container_width=headbox_width,
+            container_height=headbox_height,
+        ),
     )
-    board_hole_positions = [
-        (spacing_x / 2, spacing_z / 2),
-        (-spacing_x / 2, spacing_z / 2),
-        (-spacing_x / 2, -spacing_z / 2),
-        (spacing_x / 2, -spacing_z / 2),
-    ]
-    board_footprint = (
-        cq.Workplane("XZ")
-        .box(
-            hs.control_board.width,
-            hs.control_board.height,
-            hs.control_board.screw_mount_clearance / 20,
-            centered=(True, True, False),
-        )
-        .translate((0, -hs.headbox.depth, 0))
-        .edges("|Y")
-        .fillet(1)
+    box = bind_to_top_surface(
+        box=box,
+        target=create_control_board_holder(
+            control_board_width=hs.control_board.width,
+            control_board_height=hs.control_board.height,
+            control_board_depth=hs.control_board.depth,
+            container_width=headbox_width,
+            container_height=headbox_height,
+            wall_thickness=hs.headbox.wall_thickness,
+        ),
     )
-    box = box.union(board_footprint)
-    box = box.cut(through_hole)
-    for x, z in board_hole_positions:
-        box = box.union(
-            create_screw_mount(
-                hole_diameter=hs.control_board.screw_hole_diameter,
-                hole_padding=hs.control_board.screw_mount_padding,
-                depth=hs.control_board.screw_mount_clearance,
-            ).translate((x, 0, z))
-        )
     return box

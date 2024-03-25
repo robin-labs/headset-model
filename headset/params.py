@@ -44,12 +44,10 @@ class HeadbandParams:
 
 @dataclass
 class HeadboxParams:
-    # The width of the headbox
-    width: float
-    # The height of the headbox
-    height: float
     # The depth of the headbox
     depth: float
+    # The thickness of the control board holder
+    wall_thickness: float
     # The peneration of the head into the headbox
     head_penetration: float
     # The cutout cylinder penetration
@@ -60,12 +58,8 @@ class HeadboxParams:
     strap_cutout_width: float
     # The strap cutout height
     strap_cutout_height: float
-    # The strap clearance
-    strap_clearance: float
-    # The strap guide depth
-    strap_guide_depth: float
-    # The strap guide width
-    strap_guide_width: float
+    # The strap cutout depth
+    strap_cutout_depth: float
 
 
 @dataclass
@@ -74,16 +68,8 @@ class ControlBoardParams:
     width: float
     # The height of the control board
     height: float
-    # The x-axis screw spacing
-    screw_spacing_x: float
-    # The z-axis screw spacing
-    screw_spacing_z: float
-    # The screw diameter
-    screw_hole_diameter: float
-    # The screw mount padding
-    screw_mount_padding: float
-    # The clearance above the headbox
-    screw_mount_clearance: float
+    # The depth of the control board
+    depth: float
 
 
 @dataclass
